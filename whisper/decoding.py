@@ -51,7 +51,8 @@ def detect_language(
 
     # forward pass using a single token, startoftranscript
     n_audio = mel.shape[0]
-    x = torch.tensor([[tokenizer.sot]] * n_audio).to(mel.device)  # [n_audio, 1]
+    x = torch.tensor([[tokenizer.sot]] *
+                     n_audio).to(mel.device)  # [n_audio, 1]
     logits = model.logits(x, mel)[:, 0]
 
     # collect detected languages; suppress all non-language tokens
@@ -86,9 +87,12 @@ class DecodingOptions:
     # sampling-related options
     temperature: float = 0.0
     sample_len: Optional[int] = None  # maximum number of tokens to sample
-    best_of: Optional[int] = None  # number of independent sample trajectories, if t > 0
-    beam_size: Optional[int] = None  # number of beams in beam search, if t == 0
-    patience: Optional[float] = None  # patience in beam search (arxiv:2204.05424)
+    # number of independent sample trajectories, if t > 0
+    best_of: Optional[int] = None
+    # number of beams in beam search, if t == 0
+    beam_size: Optional[int] = None
+    # patience in beam search (arxiv:2204.05424)
+    patience: Optional[float] = None
 
     # "alpha" in Google NMT, or None for length norm, when ranking generations
     # to select which to return among the beams or best-of-N samples
@@ -97,7 +101,8 @@ class DecodingOptions:
     # text or tokens to feed as the prompt or the prefix; for more info:
     # https://github.com/openai/whisper/discussions/117#discussioncomment-3727051
     prompt: Optional[Union[str, List[int]]] = None  # for the previous context
-    prefix: Optional[Union[str, List[int]]] = None  # to prefix the current context
+    # to prefix the current context
+    prefix: Optional[Union[str, List[int]]] = None
 
     # list of tokens ids (or comma-separated token ids) to suppress
     # "-1" will suppress a set of symbols as defined in `tokenizer.non_speech_tokens()`
@@ -273,10 +278,12 @@ class GreedyDecoder(TokenDecoder):
         if self.temperature == 0:
             next_tokens = logits.argmax(dim=-1)
         else:
-            next_tokens = Categorical(logits=logits / self.temperature).sample()
+            next_tokens = Categorical(
+                logits=logits / self.temperature).sample()
 
         logprobs = F.log_softmax(logits.float(), dim=-1)
-        current_logprobs = logprobs[torch.arange(logprobs.shape[0]), next_tokens]
+        current_logprobs = logprobs[torch.arange(
+            logprobs.shape[0]), next_tokens]
         sum_logprobs += current_logprobs * (tokens[:, -1] != self.eot)
 
         next_tokens[tokens[:, -1] == self.eot] = self.eot
@@ -420,7 +427,8 @@ class SuppressBlank(LogitFilter):
 
     def apply(self, logits: Tensor, tokens: Tensor):
         if tokens.shape[1] == self.sample_begin:
-            logits[:, self.tokenizer.encode(" ") + [self.tokenizer.eot]] = -np.inf
+            logits[:, self.tokenizer.encode(
+                " ") + [self.tokenizer.eot]] = -np.inf
 
 
 class SuppressTokens(LogitFilter):
@@ -449,7 +457,7 @@ class ApplyTimestampRules(LogitFilter):
 
         # timestamps have to appear in pairs, except directly before EOT; mask logits accordingly
         for k in range(tokens.shape[0]):
-            sampled_tokens = tokens[k, self.sample_begin :]
+            sampled_tokens = tokens[k, self.sample_begin:]
             seq = [t for t in sampled_tokens.tolist()]
             last_was_timestamp = (
                 len(seq) >= 1 and seq[-1] >= self.tokenizer.timestamp_begin
@@ -460,7 +468,7 @@ class ApplyTimestampRules(LogitFilter):
 
             if last_was_timestamp:
                 if penultimate_was_timestamp:  # has to be non-timestamp
-                    logits[k, self.tokenizer.timestamp_begin :] = -np.inf
+                    logits[k, self.tokenizer.timestamp_begin:] = -np.inf
                 else:  # cannot be normal text tokens
                     logits[k, : self.tokenizer.eot] = -np.inf
 
@@ -474,7 +482,7 @@ class ApplyTimestampRules(LogitFilter):
                     timestamp_last = timestamps[-1]
                 else:
                     timestamp_last = timestamps[-1] + 1
-                logits[k, self.tokenizer.timestamp_begin : timestamp_last] = -np.inf
+                logits[k, self.tokenizer.timestamp_begin: timestamp_last] = -np.inf
 
         if tokens.shape[1] == self.sample_begin:
             # suppress generating non-timestamp tokens at the beginning
@@ -485,16 +493,17 @@ class ApplyTimestampRules(LogitFilter):
                 last_allowed = (
                     self.tokenizer.timestamp_begin + self.max_initial_timestamp_index
                 )
-                logits[:, last_allowed + 1 :] = -np.inf
+                logits[:, last_allowed + 1:] = -np.inf
 
         # if sum of probability over timestamps is above any other token, sample timestamp
         logprobs = F.log_softmax(logits.float(), dim=-1)
         for k in range(tokens.shape[0]):
-            timestamp_logprob = logprobs[k, self.tokenizer.timestamp_begin :].logsumexp(
+            timestamp_logprob = logprobs[k, self.tokenizer.timestamp_begin:].logsumexp(
                 dim=-1
             )
-            max_text_token_logprob = logprobs[k, : self.tokenizer.timestamp_begin].max()
-            if timestamp_logprob > max_text_token_logprob:
+            max_text_token_logprob = logprobs[k,
+                                              : self.tokenizer.timestamp_begin].max()
+            if timestamp_logprob > max_text_token_logprob * 0.5:
                 logits[k, : self.tokenizer.timestamp_begin] = -np.inf
 
 
@@ -543,9 +552,11 @@ class DecodingTask:
         # logit filters: applies various rules to suppress or penalize certain tokens
         self.logit_filters = []
         if self.options.suppress_blank:
-            self.logit_filters.append(SuppressBlank(self.tokenizer, self.sample_begin))
+            self.logit_filters.append(SuppressBlank(
+                self.tokenizer, self.sample_begin))
         if self.options.suppress_tokens:
-            self.logit_filters.append(SuppressTokens(self._get_suppress_tokens()))
+            self.logit_filters.append(
+                SuppressTokens(self._get_suppress_tokens()))
         if not options.without_timestamps:
             precision = CHUNK_LENGTH / model.dims.n_audio_ctx  # usually 0.02 seconds
             max_initial_timestamp_index = None
@@ -564,13 +575,15 @@ class DecodingTask:
             raise ValueError("beam_size and best_of can't be given together")
         if options.temperature == 0:
             if options.best_of is not None:
-                raise ValueError("best_of with greedy sampling (T=0) is not compatible")
+                raise ValueError(
+                    "best_of with greedy sampling (T=0) is not compatible")
         if options.patience is not None and options.beam_size is None:
             raise ValueError("patience requires beam_size to be given")
         if options.length_penalty is not None and not (
             0 <= options.length_penalty <= 1
         ):
-            raise ValueError("length_penalty (alpha) should be a value between 0 and 1")
+            raise ValueError(
+                "length_penalty (alpha) should be a value between 0 and 1")
 
         return options
 
@@ -596,7 +609,7 @@ class DecodingTask:
             )
             tokens = (
                 [self.tokenizer.sot_prev]
-                + prompt_tokens[-(self.n_ctx // 2 - 1) :]
+                + prompt_tokens[-(self.n_ctx // 2 - 1):]
                 + tokens
             )
 
@@ -614,7 +627,8 @@ class DecodingTask:
         elif suppress_tokens is None or len(suppress_tokens) == 0:
             suppress_tokens = []  # interpret empty string as an empty list
         else:
-            assert isinstance(suppress_tokens, list), "suppress_tokens must be a list"
+            assert isinstance(
+                suppress_tokens, list), "suppress_tokens must be a list"
 
         suppress_tokens.extend(
             [
@@ -663,14 +677,16 @@ class DecodingTask:
             )
             languages = [max(probs, key=probs.get) for probs in lang_probs]
             if self.options.language is None:
-                tokens[:, self.sot_index + 1] = lang_tokens  # write language tokens
+                # write language tokens
+                tokens[:, self.sot_index + 1] = lang_tokens
 
         return languages, lang_probs
 
     def _main_loop(self, audio_features: Tensor, tokens: Tensor):
         assert audio_features.shape[0] == tokens.shape[0]
         n_batch = tokens.shape[0]
-        sum_logprobs: Tensor = torch.zeros(n_batch, device=audio_features.device)
+        sum_logprobs: Tensor = torch.zeros(
+            n_batch, device=audio_features.device)
         no_speech_probs = [np.nan] * n_batch
 
         try:
@@ -680,8 +696,10 @@ class DecodingTask:
                 if (
                     i == 0 and self.tokenizer.no_speech is not None
                 ):  # save no_speech_probs
-                    probs_at_sot = logits[:, self.sot_index].float().softmax(dim=-1)
-                    no_speech_probs = probs_at_sot[:, self.tokenizer.no_speech].tolist()
+                    probs_at_sot = logits[:, self.sot_index].float().softmax(
+                        dim=-1)
+                    no_speech_probs = probs_at_sot[:,
+                                                   self.tokenizer.no_speech].tolist()
 
                 # now we need to consider the logits at the last token only
                 logits = logits[:, -1]
@@ -691,7 +709,8 @@ class DecodingTask:
                     logit_filter.apply(logits, tokens)
 
                 # expand the tokens tensor with the selected next tokens
-                tokens, completed = self.decoder.update(tokens, logits, sum_logprobs)
+                tokens, completed = self.decoder.update(
+                    tokens, logits, sum_logprobs)
 
                 if completed or tokens.shape[-1] > self.n_ctx:
                     break
@@ -706,11 +725,13 @@ class DecodingTask:
         tokenizer: Tokenizer = self.tokenizer
         n_audio: int = mel.shape[0]
 
-        audio_features: Tensor = self._get_audio_features(mel)  # encoder forward pass
+        audio_features: Tensor = self._get_audio_features(
+            mel)  # encoder forward pass
         tokens: Tensor = torch.tensor([self.initial_tokens]).repeat(n_audio, 1)
 
         # detect language if requested, overwriting the language token
-        languages, language_probs = self._detect_language(audio_features, tokens)
+        languages, language_probs = self._detect_language(
+            audio_features, tokens)
         if self.options.task == "lang_id":
             return [
                 DecodingResult(
@@ -723,10 +744,12 @@ class DecodingTask:
 
         # repeat the audio & text tensors by the group size, for beam search or best-of-n sampling
         audio_features = audio_features.repeat_interleave(self.n_group, dim=0)
-        tokens = tokens.repeat_interleave(self.n_group, dim=0).to(audio_features.device)
+        tokens = tokens.repeat_interleave(
+            self.n_group, dim=0).to(audio_features.device)
 
         # call the main sampling loop
-        tokens, sum_logprobs, no_speech_probs = self._main_loop(audio_features, tokens)
+        tokens, sum_logprobs, no_speech_probs = self._main_loop(
+            audio_features, tokens)
 
         # reshape the tensors to have (n_audio, n_group) as the first two dimensions
         audio_features = audio_features[:: self.n_group]
@@ -739,16 +762,19 @@ class DecodingTask:
         # get the final candidates for each group, and slice between the first sampled token and EOT
         tokens, sum_logprobs = self.decoder.finalize(tokens, sum_logprobs)
         tokens: List[List[Tensor]] = [
-            [t[self.sample_begin : (t == tokenizer.eot).nonzero()[0, 0]] for t in s]
+            [t[self.sample_begin: (t == tokenizer.eot).nonzero()[
+                0, 0]] for t in s]
             for s in tokens
         ]
 
         # select the top-ranked sample in each group
         selected = self.sequence_ranker.rank(tokens, sum_logprobs)
-        tokens: List[List[int]] = [t[i].tolist() for i, t in zip(selected, tokens)]
+        tokens: List[List[int]] = [t[i].tolist()
+                                   for i, t in zip(selected, tokens)]
         texts: List[str] = [tokenizer.decode(t).strip() for t in tokens]
 
-        sum_logprobs: List[float] = [lp[i] for i, lp in zip(selected, sum_logprobs)]
+        sum_logprobs: List[float] = [lp[i]
+                                     for i, lp in zip(selected, sum_logprobs)]
         avg_logprobs: List[float] = [
             lp / (len(t) + 1) for t, lp in zip(tokens, sum_logprobs)
         ]
@@ -762,7 +788,8 @@ class DecodingTask:
             no_speech_probs,
         )
         if len(set(map(len, fields))) != 1:
-            raise RuntimeError(f"inconsistent result lengths: {list(map(len, fields))}")
+            raise RuntimeError(
+                f"inconsistent result lengths: {list(map(len, fields))}")
 
         return [
             DecodingResult(
